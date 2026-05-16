@@ -34,7 +34,7 @@ def get_via_sops(course_key, key, sops_path=None, secrets_file=None):
     """
     try:
         if sops_path is None:
-            sops_path = "/root/go/bin/sops"
+            sops_path = "/usr/local/bin/sops"
 
         secrets_file = secrets_file
 

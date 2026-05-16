@@ -57,3 +57,31 @@ def test_create_sourced_id():
     url = gn.create_sourced_id("BerkeleyX+Data8.1x+2021", "6333e19d6b4d46f88df671ba50f616d8")
     assert url == "course-v1%3ABerkeleyX+Data8.1x+2021:edge.edx.org-6333e19d6b4d46f88df671ba50f616d8"
     del os.environ['EDX_URL']
+
+
+def test_log_tornado_issues_falls_back_without_firestore(monkeypatch, capsys):
+    monkeypatch.setenv("ENVIRONMENT", "ci-smoke-test")
+
+    def raise_firestore_client():
+        raise RuntimeError("missing firestore credentials")
+
+    monkeypatch.setattr(gn.firestore, "client", raise_firestore_client)
+
+    assert gn.log_tornado_issues("Server started", "info") is None
+
+    captured = capsys.readouterr()
+    assert "Skipping Firestore tornado log for info: Server started" in captured.err
+
+
+def test_log_error_csv_falls_back_without_firestore(monkeypatch, capsys):
+    monkeypatch.setenv("ENVIRONMENT", "ci-smoke-test")
+
+    def raise_firestore_client():
+        raise RuntimeError("missing firestore credentials")
+
+    monkeypatch.setattr(gn.firestore, "client", raise_firestore_client)
+
+    gn.log_error_csv("tester", {"course": "88ex", "section": "1", "assignment": "lab01"}, "boom")
+
+    captured = capsys.readouterr()
+    assert "Skipping Firestore log write for error" in captured.err

@@ -35,8 +35,13 @@ def submit_notebook(nb_path):
     print(f"  submitted {nb_path.name} → {resp.status_code}")
 
 
-def poll_for_grade(db, collection, user, course, assignment, deadline):
-    """Poll Firestore until a grade entry appears. Returns the grade float."""
+def poll_for_grade(db, collection, user, course, assignment, deadline, exclude_ids=None):
+    """
+    Poll Firestore until a grade entry appears. `exclude_ids` skips already-consumed
+    docs so the student/solution pair (same user/course/assignment) don't read the
+    same grade twice. Returns (grade, doc_ref).
+    """
+    exclude_ids = exclude_ids or set()
     while True:
         docs = (
             db.collection(collection)
@@ -45,9 +50,11 @@ def poll_for_grade(db, collection, user, course, assignment, deadline):
             .where("assignment", "==", assignment)
             .get()
         )
-        if docs:
-            grade = docs[-1].to_dict().get("grade")
-            return grade
+        candidates = [d for d in docs if d.id not in exclude_ids]
+        if candidates:
+            candidates.sort(key=lambda d: d.to_dict().get("timestamp", ""))
+            latest = candidates[-1]
+            return latest.to_dict().get("grade"), latest.reference
         if time.time() >= deadline:
             raise TimeoutError(
                 f"Timed out waiting for grade: user={user}, course={course}, assignment={assignment}"
@@ -76,6 +83,7 @@ def run_pair(db, collection_prefix, test_user, course, assignment):
 
     errors = []
     deadline = time.time() + POLL_TIMEOUT
+    consumed_ids = set()
 
     for role, nb_path, expected_grade in [
         ("student",  student_nb,  0.0),
@@ -84,7 +92,11 @@ def run_pair(db, collection_prefix, test_user, course, assignment):
         print(f"  Submitting {role} notebook ({course}/{assignment})...")
         try:
             submit_notebook(nb_path)
-            grade = poll_for_grade(db, f"{collection_prefix}-grades", test_user, course, assignment, deadline)
+            grade, doc_ref = poll_for_grade(
+                db, f"{collection_prefix}-grades", test_user, course, assignment, deadline,
+                exclude_ids=consumed_ids,
+            )
+            consumed_ids.add(doc_ref.id)
             if grade != expected_grade:
                 errors.append(
                     f"{course}/{assignment} {role}: expected grade {expected_grade}, got {grade}"

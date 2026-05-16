@@ -73,11 +73,17 @@ jobs:
           private-key: ${{ secrets.EDX_IMAGE_BUILDER_PRIVATE_KEY }}
           owner: edx-berkeley
 
+      # Base the auto-bumper branch on `staging`, not the default branch.
+      # The default branch (prod) is normally behind staging — basing the
+      # bump branch on prod and PR-ing into staging produces a huge diff
+      # where staging-only commits look like additions. Pinning to
+      # `staging` keeps the diff tight (single line in values.yaml).
       - name: Checkout edx-hub
         uses: actions/checkout@v6
         with:
           token: ${{ steps.app-token.outputs.token }}
           repository: edx-berkeley/edx-hub
+          ref: staging
           sparse-checkout: otter-service/
 
       - name: Set git identity
