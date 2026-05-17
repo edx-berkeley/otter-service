@@ -64,6 +64,16 @@ jobs:
             exit 1
           fi
 
+      # Stop + remove the container BEFORE Firestore cleanup so the otter
+      # pod's "Shutdown finally" tornado-log is written first. Otherwise it
+      # lands after the cleanup runs and orphans an otter-ci-${run_id}-tornado-logs
+      # entry in Firestore.
+      - name: Stop otter container
+        if: always()
+        run: |
+          docker stop otter-pr 2>/dev/null || true
+          docker rm   otter-pr 2>/dev/null || true
+
       - name: Clean up Firestore CI collections
         if: always()
         run: |
