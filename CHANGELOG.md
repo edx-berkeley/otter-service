@@ -25,12 +25,6 @@
   `COURSE_CONTENT_READER_*` are populated, skip cleanly locally.
 - `python-app.yml` workflow drops the SOPS install step.
 
-#### Coordination notes
-
-- Requires org secrets `OTTER_LTI_CONSUMER_*` and `JH_API_TOKEN_*` to be
-  populated before tagging 2.1.0 — otherwise the new image starts with
-  `KeyError` on first grading request. See edx-hub
-  `secrets-vars-cleanup-plan.md` §4b.
 
 ## 2.0.18
 
