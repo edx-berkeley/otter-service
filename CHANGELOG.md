@@ -1,3 +1,54 @@
+## 2.1.0
+
+#### Breaking changes
+
+- Runtime no longer reads credentials from SOPS-encrypted in-package YAML.
+  GitHub App credentials (`github_app_id`, `github_app_private_key`,
+  `github_app_installation_id`), LTI consumer key/secret, and the
+  JupyterHub API token are now read from env vars set by the deploy
+  workflow (edx-hub `deploy-otter.yaml`) from org-level GitHub secrets
+  via Helm `--set-string` → K8s Secret → pod env.
+- `grade_assignment.download_autograder_materials()` and `grade_assignment()`
+  no longer accept `sops_path` / `secrets_file` parameters.
+- The `secrets/` directory inside the package is gone.
+
+#### Enhancements made
+
+- New `keys` module replaces `access_sops_keys`: `get_env(key)` for env-var
+  lookups, `get_course_repo(course)` for the public course→repo mapping.
+- New `course_repos.yaml` (plain, not encrypted) bundles the public
+  course→autograder-repo URLs that used to live in the SOPS file.
+- Dockerfile no longer installs `sops` binary (smaller image, one less
+  external dep).
+- `tests/test_grade_assignment.py` integration tests now gate on env-var
+  presence via `@pytest.mark.skipif` — run in CI when org-level
+  `COURSE_CONTENT_READER_*` are populated, skip cleanly locally.
+- `python-app.yml` workflow drops the SOPS install step.
+
+
+## 2.0.18
+
+#### Bug fixes
+
+- Stop the otter-pr container before the Firestore CI-cleanup step so the
+  pod's `Shutdown finally` log lands first instead of orphaning the
+  per-run `otter-ci-{run_id}-tornado-logs` collection.
+
+#### Maintenance
+
+- Re-cut release after 2.0.17's tag was never pushed; image was lingering
+  in GCR with the right sops-path fix but the auto-bumper still pointed
+  edx-hub at 2.0.16.
+
+## 2.0.17
+
+#### Bug fixes
+
+- Align `access_sops_keys` default `sops_path` with where the Dockerfile
+  installs the binary (`/usr/local/bin/sops`). Without this fix, every
+  call to `download_autograder_materials` raised
+  `FileNotFoundError: '/root/go/bin/sops'` in 2.0.16.
+
 ## 2.0.16
 
 #### Enhancements made

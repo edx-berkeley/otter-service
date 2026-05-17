@@ -1,4 +1,0 @@
-creation_rules:
-  - gcp_kms: projects/data8x-scratch/locations/global/keyRings/data8x-sops/cryptoKeys/otter-service
-    encrypted_regex: '^(github_access_token|github_app_private_key|stringData)$'
-    path_regex: '.*\.(yaml|yml|json)$'

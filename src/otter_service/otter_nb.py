@@ -22,7 +22,7 @@ import tornado.ioloop
 import tornado.escape
 import tornado.options
 import tornado.gen
-from otter_service import access_sops_keys
+from otter_service import keys
 from otter_service.grade_assignment import grade_assignment
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -187,9 +187,8 @@ async def post_grade(solutions_base_path, metadata):
           </imsx_POXBody>
         </imsx_POXEnvelopeRequest>
         """
-        secrets_file = os.path.join(os.path.dirname(__file__), "secrets/gke_key.yaml")
-        consumer_key = access_sops_keys.get(None, "LTI_CONSUMER_KEY", secrets_file=secrets_file)
-        consumer_secret = access_sops_keys.get(None, "LTI_CONSUMER_SECRET", secrets_file=secrets_file)
+        consumer_key = keys.get_env("LTI_CONSUMER_KEY")
+        consumer_secret = keys.get_env("LTI_CONSUMER_SECRET")
 
         sourced_id = f"{sourced_id}:{user_id}"
         post_data = post_xml.format(grade=float(grade), sourcedid=sourced_id)
