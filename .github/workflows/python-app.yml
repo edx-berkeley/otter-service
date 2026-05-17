@@ -64,11 +64,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install sops
-        run: |
-          curl -Lo /usr/local/bin/sops https://github.com/mozilla/sops/releases/download/v3.7.3/sops-v3.7.3.linux.amd64
-          chmod +x /usr/local/bin/sops
-
       - name: Install dependencies
         run: |
           pip install --upgrade pip
@@ -77,6 +72,10 @@ jobs:
           pip install .
 
       - name: Test with pytest
+        env:
+          github_app_id: ${{ vars.COURSE_CONTENT_READER_APP_ID }}
+          github_app_installation_id: ${{ vars.COURSE_CONTENT_READER_INSTALLATION_ID }}
+          github_app_private_key: ${{ secrets.COURSE_CONTENT_READER_PRIVATE_KEY }}
         run: pytest
 
       - name: Remind to tag after merge

@@ -2,7 +2,6 @@ FROM ubuntu:22.04
 ARG DEBIAN_FRONTEND=noninteractive
 ARG OTTER_SERVICE_VERSION
 
-ENV SOPS_VERSION=v3.7.3
 ENV DOCKER_VERSION=5:24.0.4-1~ubuntu.22.04~jammy
 
 RUN apt-get update && \
@@ -15,11 +14,6 @@ RUN apt-get update && \
         gnupg \
         lsb-release && \
     rm -rf /var/lib/apt/lists/*
-
-# Install sops from upstream release binary (avoids needing Go toolchain in the image)
-RUN curl -fsSL -o /usr/local/bin/sops \
-        "https://github.com/mozilla/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.amd64" && \
-    chmod +x /usr/local/bin/sops
 
 # Install docker cli from upstream apt repo
 RUN mkdir -p /etc/apt/keyrings && \

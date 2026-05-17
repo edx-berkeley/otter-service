@@ -1,0 +1,12 @@
+# Per-course autograder repo URLs. Public — not secret. Used by
+# grade_assignment.download_autograder_materials() at grading time.
+# Add a new course by appending a top-level key matching the course
+# slug in the notebook's metadata.otter_service.course.
+8x:
+  autograder_repo: github.com/edx-berkeley/8X-autograders
+88ex:
+  autograder_repo: github.com/edx-berkeley/88E-autograders
+88bx:
+  autograder_repo: github.com/edx-berkeley/88B-autograders
+88cx:
+  autograder_repo: github.com/edx-berkeley/88C-autograders

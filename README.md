@@ -76,7 +76,7 @@ This image is used by otter-grader to run the containerized grading.
 
 # EdX/LTI integration
 
-The system posts the grade back to the EdX via LTI. You need to have the `LTI_CONSUMER_KEY` and `LTI_CONSUMER_SECRET` defined and encoded via `sops` for this to work correctly. The secrets are in `otter-service/secrets/gke_key.yaml`
+The system posts the grade back to EdX via LTI. `LTI_CONSUMER_KEY` and `LTI_CONSUMER_SECRET` must be present in the otter-srv container's environment. In production they come from org-level GitHub secrets (`OTTER_LTI_CONSUMER_KEY` / `OTTER_LTI_CONSUMER_SECRET`) → Helm `--set-string` → K8s Secret → pod env. See [edx-hub/secrets-vars-cleanup-plan.md §4b](https://github.com/edx-berkeley/edx-hub/blob/staging/secrets-vars-cleanup-plan.md).
 
 # Deployment
 
@@ -198,7 +198,7 @@ networks:
 ```
 
 Notes:
-- .local-env These are environment variables that must be set. They mirror the variables in the file `otter-service/values.yaml` under the key `otter_env`. You do not need to encrypt your local-env file with sops. 
+- .local-env These are environment variables that must be set. They mirror the variables in the file `otter-service/values.yaml` under the key `otter_env`. Plain text — no encryption.
 
 # Typical Workflow
 - Activate/create the python environment with conda or virtualenv using requirements/dev.txt

@@ -6,7 +6,7 @@ import tarfile
 import time
 import os
 import glob
-from otter_service import access_sops_keys
+from otter_service import keys
 import shutil
 import otter_service.util as util
 
@@ -34,22 +34,21 @@ def get_github_app_token(app_id, private_key_pem, installation_id):
     return resp.json()["token"]
 
 
-def download_autograder_materials(course, sops_path, secrets_file, save_path=None):
+def download_autograder_materials(course, save_path=None):
     """
-    This function downloads the appropriate archive of autograder materials be used for testing. The archive
-    must be on the main branch(but it will also try the master branch if main fails)
+    Download the autograder materials archive for a course.
 
-    :param course: key to autograder_repo in secrets file
-    :param sops_path: path to sops executable
-    :param secrets_file: path to secrets file
-    :param save_path: Where to save the archive -- for testing it is "." for normal it will /tmp
+    Tries the 'main' branch first, then falls back to 'master'.
+
+    :param course: course slug (matches a top-level key in course_repos.yaml)
+    :param save_path: where to save the archive — defaults to '.'
     """
     branch = "main"
-    app_id = access_sops_keys.get(None, "github_app_id", sops_path=sops_path, secrets_file=secrets_file)
-    private_key = access_sops_keys.get(None, "github_app_private_key", sops_path=sops_path, secrets_file=secrets_file)
-    installation_id = access_sops_keys.get(None, "github_app_installation_id", sops_path=sops_path, secrets_file=secrets_file)
+    app_id = keys.get_env("github_app_id")
+    private_key = keys.get_env("github_app_private_key")
+    installation_id = keys.get_env("github_app_installation_id")
     git_access_token = get_github_app_token(app_id, private_key, installation_id)
-    autograder_materials_repo = access_sops_keys.get(course, "autograder_repo", sops_path=sops_path, secrets_file=secrets_file)
+    autograder_materials_repo = keys.get_course_repo(course)
     # GitHub App tokens require the Authorization header; embedding in the URL is not supported.
     # repo format: "github.com/owner/repo" → extract "owner/repo" for the API path.
     repo_path = "/".join(autograder_materials_repo.split("/")[-2:])
@@ -100,21 +99,16 @@ def remove_notebook(submission):
                 pass
 
 
-async def grade_assignment(submission,
-                           args,
-                           sops_path=None, secrets_file=None, save_path=None):
+async def grade_assignment(submission, args, save_path=None):
     """
-    This function spins up a docker instance using otter, grades the submission
-    and returns the grade
+    Spin up a docker instance with otter, grade the submission, return the grade.
 
-    :param submission: the path to the file you want to grade
+    :param submission: path to the notebook file to grade
     :param args: json containing metadata from notebook
-        - course: used as key to secrets file and course config
+        - course: course slug (matches a top-level key in course_repos.yaml)
         - section: key to course config
-        - assignment: key to assignment name
-    :param sops_path: [OPTIONAL] used to execute pytests
-    :param secrets_file: [OPTIONAL] used to execute pytests
-    :param save_path: [OPTIONAL] used to execute pytests
+        - assignment: assignment name
+    :param save_path: [OPTIONAL] override save dir — used by tests
     :return: grade, solutions_base_path
     :rtype: float, string
     """
@@ -122,9 +116,7 @@ async def grade_assignment(submission,
         solutions_base_path = None
         if save_path is None:
             save_path = "/opt"
-        if secrets_file is None:
-            secrets_file = os.path.join(os.path.dirname(__file__), "secrets/gh_key.yaml")
-        solutions_base_path = download_autograder_materials(args["course"], sops_path, secrets_file, save_path=save_path)
+        solutions_base_path = download_autograder_materials(args["course"], save_path=save_path)
 
         course_config = util.get_course_config(solutions_base_path)
 
