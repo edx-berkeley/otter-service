@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      quick_test:
+        description: 'Skip full grading test, use lab01 only (faster for hotfixes)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -43,6 +50,58 @@ jobs:
         run: |
           pip install build
           python3 -m build
+
+      - name: Authenticate to GCP (for grading test)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/75088546496/locations/global/workloadIdentityPools/otter-pool/providers/github-actions'
+          service_account: 'otter-sa@data8x-scratch.iam.gserviceaccount.com'
+
+      - name: Build Docker image for grading test
+        run: docker build -t otter-service:test .
+
+      - name: Start otter-service for grading test
+        run: |
+          docker run -d --name otter-test -p 10101:10101 \
+            -e GCP_PROJECT_ID=${{ vars.GCP_PROJECT }} \
+            -e ENVIRONMENT=otter-ci-test-${{ github.run_id }} \
+            -e LOG_LEVEL=INFO \
+            otter-service:test
+
+      - name: Wait for service to be ready
+        run: |
+          for i in {1..30}; do
+            if curl -f http://localhost:10101/services/otter_grade/ 2>/dev/null; then
+              echo "Service ready"
+              exit 0
+            fi
+            echo "Attempt $i: waiting for service..."
+            sleep 2
+          done
+          echo "Service failed to start"
+          docker logs otter-test
+          exit 1
+
+      - name: Fetch notebooks for grading test
+        run: |
+          pip install nbformat pyyaml -q
+          python3 tests/fetch_test_notebooks.py \
+            --courses "88ex,88bx,88cx,8x" \
+            ${{ inputs.quick_test == true && '--smoke' || '' }}
+
+      - name: Run grading test
+        run: |
+          pip install google-cloud-firestore requests -q
+          python3 tests/run_docker_grade_check.py \
+            --run-id "${{ github.run_id }}"
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT }}
+
+      - name: Stop otter container
+        if: always()
+        run: |
+          docker stop otter-test 2>/dev/null || true
+          docker rm otter-test 2>/dev/null || true
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
