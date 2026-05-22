@@ -129,6 +129,10 @@ CI results are posted to the **#edx-hub-ci** channel in the **UCB DS External** 
 The following workflows post to Slack on every run (success or failure):
 - `docker-grade-check.yml` — on every PR
 
+### Branch protection
+
+`main` requires a PR with at least one approving review, force-push and deletion are blocked. Required status checks must pass before merge.
+
 ### Repository variables and secrets
 
 The following must be configured on the repository (or the `edx-berkeley` organization) for CI to function:
