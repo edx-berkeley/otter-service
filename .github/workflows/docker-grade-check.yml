@@ -2,6 +2,12 @@ name: Docker Smoke Test
 
 on:
   pull_request_target:
+    paths-ignore:
+      - "README.md"
+      - "CHANGELOG.md"
+      - "LICENSE"
+      - "docs/**"
+      - ".github/**"
 
 jobs:
   docker-smoke-test:
