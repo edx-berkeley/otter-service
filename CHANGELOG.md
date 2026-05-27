@@ -1,3 +1,17 @@
+## 2.2.1
+
+#### Infrastructure
+
+- `cloudbuild.yaml` now pushes the `otter-srv` image to Artifact Registry
+  (`us-central1-docker.pkg.dev/data8x-scratch/otter-images/otter-srv`)
+  instead of the deprecated `gcr.io/data8x-scratch/otter-srv`.
+
+#### CI
+
+- Added a weekly Firestore orphan sweeper for stale `otter-ci-*` collections
+  left behind when GH Actions SIGKILLs the integration-test runner past its
+  `timeout-minutes`.
+
 ## 2.2.0
 
 #### Release process
