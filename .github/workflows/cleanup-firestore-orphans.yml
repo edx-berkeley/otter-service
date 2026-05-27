@@ -1,0 +1,58 @@
+name: Firestore orphan cleanup
+
+# Sweeps stale otter-ci-* collections in Firestore left behind when CI runs
+# timed out / were SIGKILLed before reaching the try/finally cleanup in
+# tests/run_docker_grade_check.py.
+#
+# Runs weekly. Also manually triggerable for ad-hoc sweeps.
+
+on:
+  schedule:
+    # Sundays 10:00 UTC (~3am PDT) — quiet window, no scheduled CI runs.
+    - cron: "0 10 * * 0"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only list candidates, don't delete"
+        required: false
+        default: "false"
+      min_age_hours:
+        description: "Skip collections newer than this (h)"
+        required: false
+        default: "6"
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install firestore client
+        run: pip install --no-cache-dir google-cloud-firestore
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Sweep stale otter-ci-* collections
+        run: |
+          ARGS="--min-age-hours ${{ inputs.min_age_hours || '6' }}"
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python3 tests/cleanup_firestore_orphans.py $ARGS
+
+      - name: Notify Slack
+        if: always()
+        uses: slackapi/slack-github-action@v3
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {"text": "${{ job.status == 'success' && '✅' || '❌' }} otter-service firestore-cleanup ${{ job.status }} · <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Run #${{ github.run_id }}>"}
