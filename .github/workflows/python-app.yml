@@ -50,7 +50,10 @@ jobs:
         run: docker build -t otter-srv:pr .
 
       - name: Notify Slack
-        if: always()
+        # Skip on fork PRs — org-level SLACK_WEBHOOK_URL is not exposed to
+        # `pull_request` (only `pull_request_target`) workflows from forks.
+        # Without this guard the step fails "Missing input" on every fork PR.
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository
         uses: slackapi/slack-github-action@v3
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
