@@ -4,27 +4,27 @@ steps:
     entrypoint: 'bash'
     args:
       - '-c'
-      - 'docker pull gcr.io/data8x-scratch/otter-srv:latest || true'
+      - 'docker pull us-central1-docker.pkg.dev/data8x-scratch/otter-images/otter-srv:latest || true'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
-      - '--cache-from=gcr.io/data8x-scratch/otter-srv:latest'
+      - '--cache-from=us-central1-docker.pkg.dev/data8x-scratch/otter-images/otter-srv:latest'
       - '--build-arg'
       - 'OTTER_SERVICE_VERSION=$_TAG_NAME'
       - '-t'
-      - 'gcr.io/data8x-scratch/otter-srv:$_TAG_NAME'
+      - 'us-central1-docker.pkg.dev/data8x-scratch/otter-images/otter-srv:$_TAG_NAME'
       - '-t'
-      - 'gcr.io/data8x-scratch/otter-srv:latest'
+      - 'us-central1-docker.pkg.dev/data8x-scratch/otter-images/otter-srv:latest'
       - '.'
 
-  # push the container image to Container Registry
+  # push the container image to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/data8x-scratch/otter-srv']
+    args: ['push', 'us-central1-docker.pkg.dev/data8x-scratch/otter-images/otter-srv']
 
 images:
-  - 'gcr.io/data8x-scratch/otter-srv:$_TAG_NAME'
-  - 'gcr.io/data8x-scratch/otter-srv:latest'
+  - 'us-central1-docker.pkg.dev/data8x-scratch/otter-images/otter-srv:$_TAG_NAME'
+  - 'us-central1-docker.pkg.dev/data8x-scratch/otter-images/otter-srv:latest'
 timeout: 1200s
 substitutions:
   _TAG_NAME: ""
