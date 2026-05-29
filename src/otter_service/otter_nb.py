@@ -23,6 +23,7 @@ import tornado.escape
 import tornado.options
 import tornado.gen
 from otter_service import keys
+from otter_service import ags
 from otter_service.grade_assignment import grade_assignment
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -139,7 +140,28 @@ async def post_grade(solutions_base_path, metadata):
         - course: the course this notebook is in
         - section: the section this notebook is in
         - assignment:  the assignment name for this notebook
+
+    Dispatches to LTI 1.3 (AGS) if metadata carries `lti13_lineitem` +
+    `lti13_token_url` (populated by otter-submit from JH auth_state on LTI 1.3
+    launches). Otherwise falls through to the existing LTI 1.1 XML/OAuth1 path.
     """
+    if ags.is_lti13_metadata(metadata):
+        user_id = metadata["userid"]
+        grade = metadata["grade"]
+        max_score = float(metadata.get("max_score", 1.0))
+        try:
+            await ags.post_grade_lti13(metadata, grade=grade, max_score=max_score)
+            log_info_csv(
+                user_id,
+                metadata,
+                f"Posted to LTI 1.3 AGS: lineitem={metadata['lti13_lineitem']} score={grade}/{max_score}",
+            )
+            return
+        except ags.AGSError as e:
+            raise GradePostException(str(e)) from e
+        except Exception as ex:
+            raise Exception(f"Problem Posting Grade to LTI 1.3 AGS: {ex}") from ex
+
     body_hash = ""
     consumer_key = ""
     try:
@@ -275,6 +297,22 @@ class OtterHandler(HubOAuthenticated, tornado.web.RequestHandler):
             # in the future, assignment should be metadata in notebook
             if 'nb' in req_data:
                 notebook = req_data['nb']
+
+            # LTI 1.3 AGS endpoints (forwarded by otter-submit from JH
+            # auth_state when the user authenticated via LTI13Authenticator).
+            # When present, post_grade() dispatches to ags.post_grade_lti13()
+            # instead of the LTI 1.1 XML/OAuth1 path. Optional — LTI 1.1
+            # launches submit without this block and use the legacy path.
+            if 'lti13' in req_data:
+                lti13 = req_data['lti13'] or {}
+                metadata['lti13_lineitem'] = lti13.get('lineitem')
+                metadata['lti13_token_url'] = lti13.get('token_url')
+                metadata['lti13_client_id'] = lti13.get('client_id')
+                # AGS expects the LTI 1.3 `sub` claim as userId; otter-submit
+                # passes it through to ensure it matches what the platform
+                # registered the user as (may differ from the JH username).
+                if lti13.get('user_id'):
+                    metadata['userid'] = lti13['user_id']
 
             otter_check = "otter_service" in notebook['metadata']
             if otter_check and "course" in notebook['metadata']["otter_service"]:
