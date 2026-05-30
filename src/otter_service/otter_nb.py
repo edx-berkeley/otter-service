@@ -142,8 +142,9 @@ async def post_grade(solutions_base_path, metadata):
         - assignment:  the assignment name for this notebook
 
     Dispatches to LTI 1.3 (AGS) if metadata carries `lti13_lineitem` +
-    `lti13_token_url` (populated by otter-submit from JH auth_state on LTI 1.3
-    launches). Otherwise falls through to the existing LTI 1.1 XML/OAuth1 path.
+    `lti13_token_url` (pulled from the user's JH auth_state in
+    OtterHandler.post on LTI 1.3 launches). Otherwise falls through to the
+    existing LTI 1.1 XML/OAuth1 path.
     """
     if ags.is_lti13_metadata(metadata):
         user_id = metadata["userid"]
@@ -298,21 +299,28 @@ class OtterHandler(HubOAuthenticated, tornado.web.RequestHandler):
             if 'nb' in req_data:
                 notebook = req_data['nb']
 
-            # LTI 1.3 AGS endpoints (forwarded by otter-submit from JH
-            # auth_state when the user authenticated via LTI13Authenticator).
-            # When present, post_grade() dispatches to ags.post_grade_lti13()
-            # instead of the LTI 1.1 XML/OAuth1 path. Optional — LTI 1.1
-            # launches submit without this block and use the legacy path.
-            if 'lti13' in req_data:
-                lti13 = req_data['lti13'] or {}
-                metadata['lti13_lineitem'] = lti13.get('lineitem')
-                metadata['lti13_token_url'] = lti13.get('token_url')
-                metadata['lti13_client_id'] = lti13.get('client_id')
-                # AGS expects the LTI 1.3 `sub` claim as userId; otter-submit
-                # passes it through to ensure it matches what the platform
-                # registered the user as (may differ from the JH username).
-                if lti13.get('user_id'):
-                    metadata['userid'] = lti13['user_id']
+            # LTI 1.3 AGS: pull the lineitem URL + token_url + client_id +
+            # sub claim out of the user's JH auth_state (captured by the
+            # post_auth_hook at launch time). post_grade() checks for these
+            # fields via ags.is_lti13_metadata() and dispatches accordingly;
+            # LTI 1.1 launches won't have the block and fall through to the
+            # legacy XML/OAuth1 path. Requires the otter_grade service token
+            # to carry the read:users:auth_state scope (set in edx-hub's
+            # common.yaml).
+            if user is not None and user.get("name") and not using_test_user:
+                try:
+                    auth_state = await ags.fetch_user_auth_state(user["name"])
+                    lti13_md = ags.lti13_metadata_from_auth_state(auth_state)
+                    if lti13_md:
+                        metadata.update(lti13_md)
+                        # AGS userId must be the platform-issued `sub` claim,
+                        # which may differ from the JH username (the latter
+                        # is what get_current_user returns).
+                        if lti13_md.get("lti13_user_id"):
+                            metadata["userid"] = lti13_md["lti13_user_id"]
+                except ags.AGSError as ex:
+                    log_info_csv(user["name"], metadata,
+                                 f"auth_state fetch failed (LTI 1.3): {ex}")
 
             otter_check = "otter_service" in notebook['metadata']
             if otter_check and "course" in notebook['metadata']["otter_service"]:

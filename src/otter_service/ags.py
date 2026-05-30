@@ -6,6 +6,13 @@ auth metadata (a `lineitem` URL and a platform `token_url`), we sign a
 client-credentials JWT with the tool's RS256 private key, exchange it for
 an OAuth2 access_token, and POST a Score to `<lineitem>/scores`.
 
+The lineitem URL, token_url, client_id, and sub claim are captured into
+the user's JH auth_state at launch time by a post_auth_hook on
+LTI13Authenticator (edx-hub common.yaml). OtterHandler.post fetches that
+auth_state via /hub/api/users/<name> (`fetch_user_auth_state`) using the
+otter_grade service token, which must carry the `read:users:auth_state`
+scope.
+
 Reference implementation: `tools/lti13-poc/post_score.py` in the
 claude-memory-edx-berkeley repo. That script was used to prove the AGS
 dance end-to-end against Saltire (HTTP 204 = score accepted, the LTI 1.3
@@ -17,7 +24,6 @@ The tool's RSA private key is read from the `LTI13_PRIVATE_KEY` env var
 """
 from __future__ import annotations
 
-import asyncio
 import os
 import time
 import uuid
@@ -173,10 +179,59 @@ def is_lti13_metadata(metadata: dict) -> bool:
     Detection: presence of both `lineitem` URL and `token_url` (the
     platform's OAuth2 token endpoint). These come from the launch JWT's
     `https://purl.imsglobal.org/spec/lti-ags/claim/endpoint` claim,
-    captured into JH `auth_state` and forwarded by otter-submit in the
-    grade submission body.
+    captured into JH `auth_state` by the post_auth_hook and pulled into
+    otter-service via fetch_user_auth_state() below.
     """
     return bool(metadata.get("lti13_lineitem") and metadata.get("lti13_token_url"))
+
+
+async def fetch_user_auth_state(username: str) -> dict:
+    """Fetch the user's auth_state from the JupyterHub API.
+
+    Requires the otter_grade service token to have the
+    `read:users:auth_state` scope (granted via the `read-users` role in
+    edx-hub's deployments/edx/config/common.yaml).
+
+    Returns the parsed `auth_state` dict (empty if the user has none).
+    """
+    api_url = os.environ["JUPYTERHUB_API_URL"].rstrip("/")
+    api_token = os.environ["JUPYTERHUB_API_TOKEN"]
+    url = f"{api_url}/users/{username}"
+    async with async_timeout.timeout(10):
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url, headers={"Authorization": f"token {api_token}"}
+            ) as resp:
+                if resp.status >= 400:
+                    text = await resp.text()
+                    raise AGSError(
+                        f"failed to fetch auth_state for {username}: "
+                        f"HTTP {resp.status} {text[:200]}"
+                    )
+                data = await resp.json()
+    return data.get("auth_state") or {}
+
+
+def lti13_metadata_from_auth_state(auth_state: dict) -> dict:
+    """Project the `lti13_ags` block out of auth_state into the metadata
+    keys that `is_lti13_metadata` / `post_grade_lti13` expect.
+
+    Returns an empty dict if no LTI 1.3 launch fed this user's auth_state.
+    """
+    block = (auth_state or {}).get("lti13_ags") or {}
+    out: dict = {}
+    if block.get("lineitem"):
+        out["lti13_lineitem"] = block["lineitem"]
+    if block.get("token_url"):
+        out["lti13_token_url"] = block["token_url"]
+    if block.get("client_id"):
+        out["lti13_client_id"] = block["client_id"]
+    # The AGS userId must be the LTI 1.3 `sub` claim from the launch, not
+    # the JH username (which is a hash for LTI 1.1 launches and may differ
+    # from the platform-issued sub even on LTI 1.3).
+    if block.get("sub"):
+        out["lti13_user_id"] = block["sub"]
+    return out
 
 
 async def post_grade_lti13(metadata: dict, grade: float, max_score: float = 1.0) -> None:

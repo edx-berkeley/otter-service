@@ -193,3 +193,40 @@ def test_token_cache_is_per_token_url(monkeypatch):
     assert ags._TOKEN_CACHE["https://a.example/token"][0] == "token-A"
     assert ags._TOKEN_CACHE["https://b.example/token"][0] == "token-B"
     ags._TOKEN_CACHE.clear()
+
+
+# ---------------------- lti13_metadata_from_auth_state ----------------------
+
+
+def test_lti13_metadata_from_auth_state_full_block():
+    auth_state = {
+        "lti13_ags": {
+            "sub": "edx-sub-29123",
+            "lineitem": "https://platform.example/lineitem/1",
+            "token_url": "https://platform.example/token",
+            "client_id": "my-tool",
+            "scopes": ["https://purl.imsglobal.org/spec/lti-ags/scope/score"],
+        }
+    }
+    out = ags.lti13_metadata_from_auth_state(auth_state)
+    assert out == {
+        "lti13_lineitem": "https://platform.example/lineitem/1",
+        "lti13_token_url": "https://platform.example/token",
+        "lti13_client_id": "my-tool",
+        "lti13_user_id": "edx-sub-29123",
+    }
+
+
+def test_lti13_metadata_from_auth_state_no_lti13_block():
+    assert ags.lti13_metadata_from_auth_state({}) == {}
+    assert ags.lti13_metadata_from_auth_state({"other": "stuff"}) == {}
+    assert ags.lti13_metadata_from_auth_state(None) == {}
+
+
+def test_lti13_metadata_from_auth_state_partial_block():
+    # Only lineitem present; other fields skipped.
+    auth_state = {"lti13_ags": {"lineitem": "https://x/y"}}
+    out = ags.lti13_metadata_from_auth_state(auth_state)
+    assert out == {"lti13_lineitem": "https://x/y"}
+    # is_lti13_metadata should return False (missing token_url).
+    assert ags.is_lti13_metadata(out) is False
