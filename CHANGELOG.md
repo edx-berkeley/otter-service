@@ -1,3 +1,35 @@
+## 2.2.3
+
+#### Features
+
+- New `otter_service.ags` module: LTI 1.3 Assignment & Grade Services
+  (AGS) grade-passback. Signs a client-credentials JWT with the tool's
+  RS256 private key, exchanges it for an OAuth2 access_token, and POSTs
+  a Score JSON to `<lineitem>/scores` (PRs #48 + #49).
+- `OtterHandler.post` now fetches the submitting user's `auth_state` via
+  `/hub/api/users/<name>` (requires the `admin:auth_state` scope on the
+  `otter_grade` service token, granted in edx-hub `common.yaml`), pulls
+  the `lti13_ags` block (lineitem URL, token_url, client_id, sub), and
+  dispatches to `ags.post_grade_lti13()` instead of the LTI 1.1
+  XML/OAuth1 path. LTI 1.1 launches are unaffected — they fall through
+  to the legacy path as before.
+
+#### Configuration
+
+- Tool's RSA private key read from `LTI13_PRIVATE_KEY` env var (full
+  PEM) or `LTI13_PRIVATE_KEY_PATH` (path to a PEM file on disk).
+- Optional `LTI13_KEY_ID` (`kid` header on the signed JWT) and
+  `LTI13_CLIENT_ID` (fallback when the platform-issued client_id isn't
+  available in auth_state) are also env-driven.
+
+#### Release notes
+
+- `2.2.2` was tagged but never published — the `__version__` bump was
+  missed, so the PyPI upload failed with `File already exists` (the
+  built wheel kept the `2.2.1` name). The `2.2.2` GitHub release and
+  git tag are orphaned (no PyPI/GAR artifacts); `2.2.3` is the first
+  release carrying the AGS changes.
+
 ## 2.2.1
 
 #### Infrastructure
