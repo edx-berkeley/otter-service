@@ -1,3 +1,27 @@
+## 2.2.5
+
+#### Bug fixes
+
+- Fix two issues in the LTI 1.3 dispatch gate (introduced in 2.2.3 and
+  partially fixed in 2.2.4) that broke the CI grading test, hung the
+  2.2.4 Release workflow on `Run grading test` until cancellation, and
+  would have caused 500s on real submissions in any environment
+  without `JUPYTERHUB_API_URL` set:
+
+  1. **`TEST_USER` check used `==` but the CI compose file sets
+     `TEST_USER` to a prefix.** Each CI submission's username is
+     `TEST_USER_<run_id>_<course>_<section>_<assignment>_<role>`, while
+     the env var is just `TEST_USER_<run_id>`. The names start with the
+     env value but never equal it, so the dispatch tried to fire for
+     test users. Changed to `startswith`.
+  2. **`fetch_user_auth_state` accesses `os.environ["JUPYTERHUB_API_URL"]`
+     directly** — raises `KeyError` when unset (CI containers). That's
+     not a subclass of `AGSError`, so the caller's `try/except
+     ags.AGSError` didn't catch it; the exception propagated and crashed
+     the request handler. Added an explicit precondition check on
+     both `JUPYTERHUB_API_URL` and `JUPYTERHUB_API_TOKEN` before
+     attempting the fetch.
+
 ## 2.2.4
 
 #### Bug fixes

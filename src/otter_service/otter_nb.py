@@ -313,10 +313,23 @@ class OtterHandler(HubOAuthenticated, tornado.web.RequestHandler):
             # fallback. In practice get_current_user() returns None for
             # every real submission in this deployment, so URL-derived
             # usernames are normal — don't gate on `not using_test_user`,
-            # just skip when the name actually matches TEST_USER.
-            if (user is not None and
-                    user.get("name") and
-                    user["name"] != os.getenv("TEST_USER")):
+            # just skip when the name matches the TEST_USER prefix.
+            #
+            # CI grading test (tests/run_docker_grade_check.py) sets
+            # TEST_USER to TEST_USER_<run_id> in docker-compose.ci.yml and
+            # submits as TEST_USER_<run_id>_<course>_<section>_<assignment>_<role>,
+            # so the names start with but never equal the env value — use
+            # startswith. Also gate on JUPYTERHUB_API_URL existing; the CI
+            # container doesn't hit a JH at all, and accessing the missing
+            # env var raises KeyError (which AGSError doesn't catch).
+            test_user_prefix = os.getenv("TEST_USER", "")
+            jh_api_set = bool(os.environ.get("JUPYTERHUB_API_URL")
+                              and os.environ.get("JUPYTERHUB_API_TOKEN"))
+            if (user is not None
+                    and user.get("name")
+                    and jh_api_set
+                    and not (test_user_prefix
+                             and user["name"].startswith(test_user_prefix))):
                 try:
                     auth_state = await ags.fetch_user_auth_state(user["name"])
                     lti13_md = ags.lti13_metadata_from_auth_state(auth_state)
