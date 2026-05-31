@@ -422,12 +422,23 @@ class OtterHandler(HubOAuthenticated, tornado.web.RequestHandler):
             log_info_csv(name, args, f"Grade: {grade}")
             # Write the grade to a Firestore
             grade_info = {
-                "userid": name,
+                # Prefer the LTI 1.3 `sub` claim if OtterHandler.post stashed
+                # one (set when fetch_user_auth_state returned an lti13_ags
+                # block). Fall back to the JH username for LTI 1.1 launches.
+                "userid": args.get("userid", name),
                 "course": course,
                 "grade": grade,
                 "section": section,
-                "assignment": assignment
+                "assignment": assignment,
             }
+            # Forward the LTI 1.3 AGS fields from args into grade_info so
+            # post_grade() can dispatch via ags.is_lti13_metadata(). Without
+            # this, the fields stashed on args in OtterHandler.post never
+            # reach post_grade — the LTI 1.3 dispatch silently skips and
+            # everything falls through to the LTI 1.1 path.
+            for k in ("lti13_lineitem", "lti13_token_url", "lti13_client_id"):
+                if args.get(k):
+                    grade_info[k] = args[k]
             write_grade(grade_info)
             log_info_csv(name, args, f"Grade Written to database: {grade}")
 

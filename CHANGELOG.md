@@ -1,3 +1,18 @@
+## 2.2.6
+
+#### Bug fixes
+
+- Forward LTI 1.3 fields from `args` to `grade_info` in
+  `OtterHandler._grade_and_post`. Without this, the `lti13_lineitem`,
+  `lti13_token_url`, `lti13_client_id`, and `userid` fields stashed on
+  `metadata`/`args` by `OtterHandler.post` were lost when a fresh
+  `grade_info` dict was constructed for `write_grade` / `post_grade`.
+  Net effect: `is_lti13_metadata(grade_info)` always returned False and
+  every LTI 1.3 submission silently fell through to the LTI 1.1 path.
+  Discovered on staging today via a Saltire E2E test that landed in
+  Firestore as `Posted to Edx: code: failure, desc: User not found`
+  with no preceding `Posted to LTI 1.3 AGS` line.
+
 ## 2.2.5
 
 #### Bug fixes
