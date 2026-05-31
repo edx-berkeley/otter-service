@@ -307,7 +307,16 @@ class OtterHandler(HubOAuthenticated, tornado.web.RequestHandler):
             # legacy XML/OAuth1 path. Requires the otter_grade service token
             # to carry the read:users:auth_state scope (set in edx-hub's
             # common.yaml).
-            if user is not None and user.get("name") and not using_test_user:
+            #
+            # NOTE: `using_test_user` only means get_current_user() returned
+            # None and the URL referrer (or TEST_USER env) was used as a
+            # fallback. In practice get_current_user() returns None for
+            # every real submission in this deployment, so URL-derived
+            # usernames are normal — don't gate on `not using_test_user`,
+            # just skip when the name actually matches TEST_USER.
+            if (user is not None and
+                    user.get("name") and
+                    user["name"] != os.getenv("TEST_USER")):
                 try:
                     auth_state = await ags.fetch_user_auth_state(user["name"])
                     lti13_md = ags.lti13_metadata_from_auth_state(auth_state)

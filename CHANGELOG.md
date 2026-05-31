@@ -1,3 +1,16 @@
+## 2.2.4
+
+#### Bug fixes
+
+- LTI 1.3 AGS dispatch in `OtterHandler.post` was gated on
+  `not using_test_user`, which skipped the new code path for **every**
+  real submission in this deployment — `self.get_current_user()`
+  consistently returns None here, so the request handler always falls
+  through to URL-referrer parsing (which sets `using_test_user=True`).
+  Fixed by replacing the guard with an explicit check against the
+  `TEST_USER` env var: real users (whether HubOAuth-identified or
+  URL-derived) now reach the auth_state fetch + AGS dispatch.
+
 ## 2.2.3
 
 #### Features
