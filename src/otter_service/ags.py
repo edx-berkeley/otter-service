@@ -234,6 +234,42 @@ def lti13_metadata_from_auth_state(auth_state: dict) -> dict:
     return out
 
 
+def normalize_nb_path(path: str) -> str:
+    """Canonical key for correlating a launch to a submitted notebook.
+
+    The hub keys the per-launch lineitem map by the notebook path parsed from
+    the launch's custom `next` (`urlpath=tree/<repo>/...` or `subPath=...`);
+    otter-submit sends the open notebook's `context.path`. Both must normalize
+    identically: URL-decode, drop a leading `tree/`, strip surrounding slashes.
+    Keep this in lockstep with the hub's `_norm_nb_path` in common.yaml.
+    """
+    from urllib.parse import unquote
+    if not path:
+        return ""
+    p = unquote(path).strip().strip("/")
+    if p.startswith("tree/"):
+        p = p[len("tree/"):]
+    return p
+
+
+def select_lineitem(auth_state: dict, notebook_path: str | None) -> str | None:
+    """Pick the lineitem for the specific notebook being submitted.
+
+    Prefers the hub-accumulated `{notebook_path: lineitem}` map
+    (`auth_state['lti13_ags_lineitems']`); falls back to the last-launch
+    lineitem in the `lti13_ags` block when the notebook was not launched via
+    LTI (e.g. opened from the file browser) or the map is absent.
+    """
+    auth_state = auth_state or {}
+    lineitems = auth_state.get("lti13_ags_lineitems") or {}
+    if notebook_path and lineitems:
+        key = normalize_nb_path(notebook_path)
+        if key in lineitems:
+            return lineitems[key]
+    block = auth_state.get("lti13_ags") or {}
+    return block.get("lineitem")
+
+
 async def post_grade_lti13(metadata: dict, grade: float, max_score: float = 1.0) -> None:
     """LTI 1.3 counterpart to `otter_nb.post_grade()`'s XML/OAuth1 path.
 

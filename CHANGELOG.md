@@ -1,3 +1,44 @@
+## 2.2.7
+
+#### Bug fixes
+
+- Robust user identity resolution in `OtterHandler.post`, fixing an
+  `IndexError: list index out of range` at `url_referer.split("/")[4]`
+  that 500'd every submission whose `Referer` had fewer than 5 path
+  segments. This surfaced on the LTI 1.3 prod cutover: the browser's
+  referrer policy trims the `fetch('/services/otter_grade/')` referer
+  down to the origin (`https://host/`), so the fixed split index no
+  longer landed on the username — and since that username is what
+  `ags.fetch_user_auth_state()` uses to read the LTI 1.3 AGS block from
+  JH `auth_state`, grade passback could never fire.
+  - Now prefers an explicit `X-Otter-User` header (sent by the
+    otter-submit client from JupyterLab `PageConfig.hubUser`).
+  - Falls back to a defensive Referer parse (`_username_from_referer`,
+    which locates the `/user/<name>/` segment and never raises), then to
+    `TEST_USER`.
+  - Logs the raw `Referer` when no username can be extracted, for
+    diagnosis.
+  - Requires otter-submit >= 0.1.17 for the header; the defensive parse
+    keeps older clients working where the referer is intact (incl. the
+    CI grade-check's `/courses/<uid>/test` shape).
+
+- Per-notebook LTI 1.3 lineitem selection (`ags.select_lineitem`),
+  fixing grades landing in the wrong gradebook column in multi-lab
+  courses. Each edX lab component is its own resource link with its own
+  lineitem, and that lineitem is only present in *that* component's
+  launch (the AGS `lineitems` container is per-component, so it cannot
+  enumerate sibling components). `auth_state.lti13_ags.lineitem` only
+  ever held the *last-launched* component, so a student working across
+  labs in one JupyterHub session would post every grade to whichever lab
+  they launched most recently. otter-service now reads the hub-maintained
+  `auth_state['lti13_ags_lineitems']` `{notebook_path: lineitem}` map
+  (accumulated across launches) and selects the entry matching the
+  submitted notebook's path (sent as `X-Otter-Notebook-Path` by
+  otter-submit >= 0.1.17), falling back to the last-launch lineitem.
+  Requires the companion edx-hub `post_auth_hook` change that builds the
+  map. `normalize_nb_path` must stay in lockstep with the hub's
+  `_norm_nb_path`.
+
 ## 2.2.6
 
 #### Bug fixes
