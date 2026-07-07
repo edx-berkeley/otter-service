@@ -8,6 +8,7 @@ import traceback
 from datetime import datetime
 import os
 from hashlib import sha1
+from urllib.parse import urlparse, unquote
 from oauthlib.oauth1.rfc5849 import signature, parameters
 import pytz
 from pytz import timezone
@@ -267,6 +268,29 @@ async def post_grade(solutions_base_path, metadata):
         raise Exception(f"Problem Posting Grade to LTI:{ex}") from ex
 
 
+def _username_from_referer(referer):
+    """Extract the JupyterHub username from a Referer URL, defensively.
+
+    JupyterHub serves single-user servers at ``/user/<name>/...`` so prefer
+    the path segment immediately after ``user``. Falls back to the second
+    path segment, which reproduces the old ``referer.split("/")[4]`` behaviour
+    for the CI grade-check's ``/courses/<uid>/test`` referer shape. Returns
+    ``None`` (never raises ``IndexError``) when nothing usable is present —
+    e.g. when browser referrer policy trims the referer down to the origin.
+    """
+    try:
+        segments = [s for s in urlparse(referer).path.split("/") if s]
+    except Exception:  # pylint: disable=broad-except
+        return None
+    if "user" in segments:
+        i = segments.index("user")
+        if i + 1 < len(segments):
+            return unquote(segments[i + 1])
+    if len(segments) >= 2:  # legacy index-4-on-full-URL == 2nd path segment
+        return unquote(segments[1])
+    return None
+
+
 class OtterHandler(HubOAuthenticated, tornado.web.RequestHandler):
     async def get(self):
         self.write("This is a post only page. You probably shouldn't be here!")
@@ -288,11 +312,26 @@ class OtterHandler(HubOAuthenticated, tornado.web.RequestHandler):
             user = self.get_current_user()
             log_info_csv("PRINT USER OBJ", metadata, str(user))
             if user is None:
+                # Identity resolution, in order of reliability:
+                #   1. X-Otter-User header sent by the otter-submit client
+                #      (JupyterLab PageConfig 'hubUser') — the JH username AGS
+                #      needs, independent of browser referrer policy.
+                #   2. Referer path (defensive parse; never IndexErrors).
+                #   3. TEST_USER env fallback.
+                explicit = self.request.headers.get("X-Otter-User")
                 url_referer = self.request.headers.get("Referer")
-                if url_referer is None:
-                    user = {"name": os.getenv("TEST_USER")}
-                else:
-                    user = {"name": url_referer.split("/")[4]}
+                name = None
+                if explicit:
+                    name = explicit
+                elif url_referer:
+                    name = _username_from_referer(url_referer)
+                    if name is None:
+                        # Browser trimmed the referer to the origin (or similar)
+                        # so no username is recoverable — log it so we can see
+                        # exactly what arrived, then fall back to TEST_USER.
+                        log_info_csv("REFERER PARSE", metadata,
+                                     f"could not extract user from Referer: {url_referer!r}")
+                user = {"name": name if name else os.getenv("TEST_USER")}
                 using_test_user = True
             req_data = tornado.escape.json_decode(self.request.body)
             # in the future, assignment should be metadata in notebook
@@ -340,6 +379,20 @@ class OtterHandler(HubOAuthenticated, tornado.web.RequestHandler):
                         # is what get_current_user returns).
                         if lti13_md.get("lti13_user_id"):
                             metadata["userid"] = lti13_md["lti13_user_id"]
+                        # Each edX component has its OWN lineitem, obtainable
+                        # only at that component's launch (the AGS 'lineitems'
+                        # container is per-component). The hub accumulates a
+                        # {notebook_path: lineitem} map across launches; select
+                        # the lineitem for the notebook actually being submitted
+                        # so a multi-lab session posts each grade to the right
+                        # gradebook column instead of the last-launched one.
+                        nb_path = self.request.headers.get("X-Otter-Notebook-Path")
+                        lineitem = ags.select_lineitem(auth_state, nb_path)
+                        if lineitem:
+                            metadata["lti13_lineitem"] = lineitem
+                        log_info_csv(user["name"], metadata,
+                                     f"LTI 1.3 lineitem for nb_path={nb_path!r}: "
+                                     f"{lineitem}")
                 except ags.AGSError as ex:
                     log_info_csv(user["name"], metadata,
                                  f"auth_state fetch failed (LTI 1.3): {ex}")
