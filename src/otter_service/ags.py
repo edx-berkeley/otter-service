@@ -27,6 +27,7 @@ from __future__ import annotations
 import os
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import aiohttp
@@ -157,7 +158,13 @@ async def post_score(
         "scoreMaximum": float(max_score),
         "activityProgress": activity_progress,
         "gradingProgress": grading_progress,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        # Millisecond precision: edX AGS dedupes Scores by timestamp and
+        # rejects a second post sharing an existing one with HTTP 400
+        # ("Score already exists for the provided timestamp"). Second-
+        # resolution collided when a submission was graded/posted twice
+        # within the same second; sub-second precision lets edX accept the
+        # later post (last-write-wins) instead of erroring.
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
     }
     headers = {
         "Authorization": f"Bearer {access_token}",

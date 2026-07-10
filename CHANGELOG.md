@@ -1,3 +1,15 @@
+## 2.2.8
+
+#### Bug fixes
+
+- LTI 1.3 AGS score `timestamp` now uses millisecond precision
+  (`...T%H:%M:%S.%fZ`) instead of whole-second resolution. edX dedupes
+  Scores by timestamp and returns HTTP 400
+  (`"Score already exists for the provided timestamp"`) when a second
+  post reuses an existing one. A submission that was graded/posted twice
+  within the same second collided; sub-second precision gives each post a
+  distinct timestamp so edX accepts the later one (last-write-wins).
+
 ## 2.2.7
 
 #### Bug fixes
