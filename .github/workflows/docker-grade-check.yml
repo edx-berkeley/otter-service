@@ -1,7 +1,22 @@
 name: Docker Smoke Test
 
+# The GCP-credentialed steps below only run for same-repo PRs and after
+# merge to main. Fork PRs are untrusted (this job builds and runs the
+# PR's own Dockerfile), so they never get GCP_SA_KEY — GitHub Actions
+# already withholds secrets from `pull_request` runs triggered by forks.
+# Previously this used `pull_request_target`, which checked out, built,
+# and ran PR-authored code with GCP_SA_KEY mounted into the container for
+# every fork PR, before any review.
 on:
-  pull_request_target:
+  pull_request:
+    paths-ignore:
+      - "README.md"
+      - "CHANGELOG.md"
+      - "LICENSE"
+      - "docs/**"
+      - ".github/**"
+  push:
+    branches: [main]
     paths-ignore:
       - "README.md"
       - "CHANGELOG.md"
@@ -12,20 +27,28 @@ on:
 jobs:
   docker-smoke-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-
-      - name: Authenticate to GCP
-        run: |
-          echo '${{ secrets.GCP_SA_KEY }}' > ${HOME}/gcloud-service-key.json
-          echo "GOOGLE_APPLICATION_CREDENTIALS=${HOME}/gcloud-service-key.json" >> $GITHUB_ENV
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Build PR image
         run: docker build -t otter-service:pr .
 
+      # otter-service authenticates to Firestore at import time, so the
+      # container can't boot without a real credential — everything past
+      # this point needs GCP_SA_KEY, and only runs for same-repo PRs or
+      # post-merge pushes.
+      - name: Authenticate to GCP
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          echo '${{ secrets.GCP_SA_KEY }}' > ${HOME}/gcloud-service-key.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=${HOME}/gcloud-service-key.json" >> $GITHUB_ENV
+
       - name: Start otter-service
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         run: |
           docker run -d --name otter-pr -p 10101:10101 \
             -v ${HOME}/gcloud-service-key.json:/tmp/sa-key.json \
@@ -36,6 +59,7 @@ jobs:
             otter-service:pr
 
       - name: Wait for service to be ready
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         run: |
           for i in {1..30}; do
             if curl -f http://localhost:10101/services/otter_grade/ 2>/dev/null; then
@@ -58,6 +82,7 @@ jobs:
       # end-to-end grading is tested in edx-hub's smoke-test job, which
       # submits properly-shaped notebooks through KEDA.
       - name: Verify service responds
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         run: |
           STATUS=$(curl -s -o /tmp/body -w "%{http_code}" \
             -X POST http://localhost:10101/services/otter_grade/ \
@@ -75,13 +100,13 @@ jobs:
       # lands after the cleanup runs and orphans an otter-ci-${run_id}-tornado-logs
       # entry in Firestore.
       - name: Stop otter container
-        if: always()
+        if: always() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
         run: |
           docker stop otter-pr 2>/dev/null || true
           docker rm   otter-pr 2>/dev/null || true
 
       - name: Clean up Firestore CI collections
-        if: always()
+        if: always() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
         run: |
           pip install google-cloud-firestore -q
           python3 - <<'EOF'
@@ -102,10 +127,10 @@ jobs:
           GCP_PROJECT_ID: ${{ vars.GCP_PROJECT }}
 
       - name: Notify Slack
-        if: always()
+        if: always() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: slackapi/slack-github-action@v3
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
           payload: |
-            {"text": "${{ job.status == 'success' && '✅' || '❌' }} otter-service docker-grade-check ${{ job.status }} — ${{ github.head_ref }} · <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Run #${{ github.run_id }}>"}
+            {"text": "${{ job.status == 'success' && '✅' || '❌' }} otter-service docker-grade-check ${{ job.status }} — ${{ github.head_ref || github.ref_name }} · <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Run #${{ github.run_id }}>"}
