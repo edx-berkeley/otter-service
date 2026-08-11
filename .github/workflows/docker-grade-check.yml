@@ -23,6 +23,7 @@ on:
       - "LICENSE"
       - "docs/**"
       - ".github/**"
+  workflow_dispatch: {}
 
 jobs:
   docker-smoke-test:
@@ -39,16 +40,17 @@ jobs:
 
       # otter-service authenticates to Firestore at import time, so the
       # container can't boot without a real credential — everything past
-      # this point needs GCP_SA_KEY, and only runs for same-repo PRs or
-      # post-merge pushes.
+      # this point needs GCP_SA_KEY, and only runs for same-repo PRs,
+      # post-merge pushes, or a manually-triggered dispatch (which already
+      # requires write access to fire).
       - name: Authenticate to GCP
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: |
           echo '${{ secrets.GCP_SA_KEY }}' > ${HOME}/gcloud-service-key.json
           echo "GOOGLE_APPLICATION_CREDENTIALS=${HOME}/gcloud-service-key.json" >> $GITHUB_ENV
 
       - name: Start otter-service
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: |
           docker run -d --name otter-pr -p 10101:10101 \
             -v ${HOME}/gcloud-service-key.json:/tmp/sa-key.json \
@@ -59,7 +61,7 @@ jobs:
             otter-service:pr
 
       - name: Wait for service to be ready
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: |
           for i in {1..30}; do
             if curl -f http://localhost:10101/services/otter_grade/ 2>/dev/null; then
@@ -82,7 +84,7 @@ jobs:
       # end-to-end grading is tested in edx-hub's smoke-test job, which
       # submits properly-shaped notebooks through KEDA.
       - name: Verify service responds
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: |
           STATUS=$(curl -s -o /tmp/body -w "%{http_code}" \
             -X POST http://localhost:10101/services/otter_grade/ \
@@ -100,13 +102,13 @@ jobs:
       # lands after the cleanup runs and orphans an otter-ci-${run_id}-tornado-logs
       # entry in Firestore.
       - name: Stop otter container
-        if: always() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         run: |
           docker stop otter-pr 2>/dev/null || true
           docker rm   otter-pr 2>/dev/null || true
 
       - name: Clean up Firestore CI collections
-        if: always() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         run: |
           pip install google-cloud-firestore -q
           python3 - <<'EOF'
@@ -127,7 +129,7 @@ jobs:
           GCP_PROJECT_ID: ${{ vars.GCP_PROJECT }}
 
       - name: Notify Slack
-        if: always() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: slackapi/slack-github-action@v3
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
